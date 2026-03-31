@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-TW" class="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>雲端記錄管理系統</title>
+  
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+    }
+  </script>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="antialiased">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useCallback } = React;
+
+    // --- 內建圖示庫 ---
+    const Icon = ({ children, size = 24, className = "" }) => (
+      <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+        {children}
+      </svg>
+    );
+    const Activity = (p) => <Icon {...p}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></Icon>;
+    const Sun = (p) => <Icon {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></Icon>;
+    const Moon = (p) => <Icon {...p}><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></Icon>;
+    const AlertCircle = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></Icon>;
+    const CheckCircle2 = (p) => <Icon {...p}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></Icon>;
+    const Plus = (p) => <Icon {...p}><path d="M5 12h14"/><path d="M12 5v14"/></Icon>;
+    const X = (p) => <Icon {...p}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></Icon>;
+    const User = (p) => <Icon {...p}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></Icon>;
+    const LinkIcon = (p) => <Icon {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></Icon>;
+    const FileText = (p) => <Icon {...p}><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></Icon>;
+    const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></Icon>;
+    const History = (p) => <Icon {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></Icon>;
+    const RefreshCw = (p) => <Icon {...p}><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/></Icon>;
+    const Edit2 = (p) => <Icon {...p}><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></Icon>;
+    const ChevronLeft = (p) => <Icon {...p}><path d="m15 18-6-6 6-6"/></Icon>;
+    const ChevronRight = (p) => <Icon {...p}><path d="m9 18 6-6-6-6"/></Icon>;
+    const Lock = (p) => <Icon {...p}><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></Icon>;
+
+    // ⭐ 統一的 GAS API 網址
+    const GAS_URL = 'https://script.google.com/macros/s/AKfycbxahHQG-QGD-9cBRH0GmN0Z3R--SjpIGD3yapM_Rf3U2LhwHEM3GixZ67lBTF8ug3w/exec';
+
+    const App = () => {
+      const [theme, setTheme] = useState('light');
+      const [records, setRecords] = useState([]);
+      const [historyLogs, setHistoryLogs] = useState([]);
+      const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+      
+      // ⭐ 密碼驗證狀態
+      const [isAuthenticated, setIsAuthenticated] = useState(false);
+      const [authPassword, setAuthPassword] = useState('');
+      const [isAuthenticating, setIsAuthenticating] = useState(false);
+
+      const [searchQuery, setSearchQuery] = useState('');
+      const [genderFilter, setGenderFilter] = useState('all');
+      const [activeSearchQuery, setActiveSearchQuery] = useState('');
+      const [activeGenderFilter, setActiveGenderFilter] = useState('all');
+      
+      // ⭐ 連結改為陣列格式
+      const [formData, setFormData] = useState({ name: '', gender: '', links: [''], notes: '' });
+      const [editingId, setEditingId] = useState(null);
+      const [isSubmitting, setIsSubmitting] = useState(false);
+      const [lastSubmitTime, setLastSubmitTime] = useState(0);
+      const [notification, setNotification] = useState(null);
+      const [currentPage, setCurrentPage] = useState(1);
+
+      useEffect(() => {
+        if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) setTheme('dark');
+      }, []);
+
+      useEffect(() => {
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+      }, [theme]);
+
+      const toggleTheme = () => setTheme(prev => prev === 'light' ? 'dark' : 'light');
+
+      const addLog = (action, detail) => {
+        const timestamp = new Date().toLocaleTimeString('zh-TW', { hour12: false });
+        setHistoryLogs(prev => [{ time: timestamp, action, detail }, ...prev].slice(0, 50));
+      };
+
+      const showNotification = (message, type = 'success') => {
+        setNotification({ message, type });
+        setTimeout(() => setNotification(null), 3000);
+      };
+
+      // ⭐ 登入與讀取資料
+      const handleLogin = async (e) => {
+        if (e) e.preventDefault();
+        if (!authPassword) return showNotification('請輸入密碼', 'error');
+        
+        setIsAuthenticating(true);
+        try {
+          const response = await fetch(`${GAS_URL}?password=${encodeURIComponent(authPassword)}`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            setRecords(result.data);
+            setIsAuthenticated(true);
+            setCurrentPage(1);
+            addLog('系統登入', '成功登入並載入雲端資料');
+            showNotification('登入成功！');
+          } else {
+            showNotification(result.message || '密碼錯誤', 'error');
+          }
+        } catch (error) {
+          showNotification('連線失敗，請檢查網路', 'error');
+        } finally {
+          setIsAuthenticating(false);
+        }
+      };
+
+      const fetchRecords = async () => {
+        if (!isAuthenticated) return;
+        setIsLoadingRecords(true);
+        try {
+          const response = await fetch(`${GAS_URL}?password=${encodeURIComponent(authPassword)}`);
+          const result = await response.json();
+          if (result.status === 'success') {
+            setRecords(result.data);
+            setCurrentPage(1);
+            addLog('同步資料', `已成功從雲端載入 ${result.data.length} 筆紀錄`);
+          } else {
+            throw new Error(result.message);
+          }
+        } catch (error) {
+          showNotification('載入雲端資料失敗，密碼可能已變更', 'error');
+          setIsAuthenticated(false); // 密碼失效則踢出
+        } finally {
+          setIsLoadingRecords(false);
+        }
+      };
+
+      const handleInputChange = (e) => setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+
+      // ⭐ 處理多筆連結的邏輯
+      const handleLinkChange = (index, value) => {
+        const newLinks = [...formData.links];
+        newLinks[index] = value;
+        setFormData(prev => ({ ...prev, links: newLinks }));
+      };
+      const addLinkField = () => setFormData(prev => ({ ...prev, links: [...prev.links, ''] }));
+      const removeLinkField = (index) => {
+        const newLinks = formData.links.filter((_, i) => i !== index);
+        setFormData(prev => ({ ...prev, links: newLinks.length ? newLinks : [''] }));
+      };
+
+      const handleEdit = (record) => {
+        // 將寫入在同一格的字串，透過換行符號切回陣列
+        const recordLinks = record.link ? record.link.split('\n').filter(l => l.trim() !== '') : [];
+        setFormData({
+          name: record.name,
+          gender: record.gender,
+          links: recordLinks.length ? recordLinks : [''],
+          notes: record.notes || ''
+        });
+        setEditingId(record.id);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        addLog('準備編輯', `開始編輯人員：${record.name}`);
+      };
+
+      const cancelEdit = () => {
+        setFormData({ name: '', gender: '', links: [''], notes: '' });
+        setEditingId(null);
+      };
+
+      useEffect(() => {
+        const isDirty = formData.name || formData.links.some(l => l.trim()) || formData.notes || formData.gender;
+        const handleBeforeUnload = (e) => { if (isDirty) { e.preventDefault(); e.returnValue = ''; } };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+      }, [formData]);
+
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        const now = Date.now();
+        if (now - lastSubmitTime < 5000) return showNotification('操作過於頻繁，請稍後再試。', 'error');
+        
+        // 確保至少填寫了一個有效的連結
+        const validLinks = formData.links.filter(l => l.trim() !== '');
+        if (!formData.name || !formData.gender || validLinks.length === 0) {
+          return showNotification('請填寫名字、性別及至少一個連結！', 'error');
+        }
+
+        setIsSubmitting(true);
+        try {
+          const payload = { 
+            action: editingId ? 'update' : 'create',
+            password: authPassword, // ⭐ 送出密碼讓後端驗證
+            id: editingId || crypto.randomUUID(), 
+            name: formData.name,
+            gender: formData.gender,
+            link: validLinks.join('\n'), // ⭐ 將陣列合併為含換行的字串存入 DB
+            notes: formData.notes,
+            timestamp: new Date().toLocaleString('zh-TW') 
+          };
+          
+          const response = await fetch(GAS_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            body: JSON.stringify(payload)
+          });
+          const result = await response.json();
+          
+          if (result.status !== 'success') throw new Error(result.message || '寫入失敗');
+
+          if (editingId) {
+            setRecords(prev => prev.map(r => r.id === editingId ? payload : r));
+            addLog('修改紀錄', `已更新人員：${formData.name}`);
+            showNotification('資料已成功更新！');
+          } else {
+            setRecords(prev => [payload, ...prev]);
+            setCurrentPage(1);
+            addLog('新增紀錄', `已新增人員：${formData.name}`);
+            showNotification('資料已成功寫入雲端！');
+          }
+          
+          setFormData({ name: '', gender: '', links: [''], notes: '' });
+          setEditingId(null);
+          setLastSubmitTime(now);
+        } catch (error) {
+          showNotification(error.message || '寫入失敗，請檢查網路設定。', 'error');
+        } finally {
+          setIsSubmitting(false);
+        }
+      };
+
+      const handleExecuteSearch = () => {
+        setActiveSearchQuery(searchQuery);
+        setActiveGenderFilter(genderFilter);
+        setCurrentPage(1);
+        addLog('執行搜尋', `關鍵字：「${searchQuery || '無'}」，性別：${genderFilter === 'all' ? '全部' : genderFilter}`);
+      };
+
+      const filteredRecords = useMemo(() => {
+        return records.filter(record => {
+          const matchSearch = (record.name.toLowerCase().includes(activeSearchQuery.toLowerCase()) || 
+                               (record.notes && record.notes.toLowerCase().includes(activeSearchQuery.toLowerCase())));
+          const matchGender = activeGenderFilter === 'all' || record.gender === activeGenderFilter;
+          return matchSearch && matchGender;
+        });
+      }, [records, activeSearchQuery, activeGenderFilter]);
+
+      const ITEMS_PER_PAGE = 20;
+      const totalPages = Math.ceil(filteredRecords.length / ITEMS_PER_PAGE) || 1;
+      const currentRecords = filteredRecords.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
+      const formatDate = (dateString) => {
+        if (!dateString) return '';
+        try {
+          const d = new Date(dateString);
+          if (isNaN(d.getTime())) return dateString; 
+          return d.toLocaleString('zh-TW', { hour12: false });
+        } catch (e) {
+          return dateString;
+        }
+      };
+
+      // ⭐ 渲染登入畫面
+      if (!isAuthenticated) {
+        return (
+          <div className={`min-h-screen flex items-center justify-center transition-colors duration-300 font-sans ${theme === 'dark' ? 'bg-slate-900' : 'bg-[#F5F7FA]'}`}>
+             <div className="absolute top-6 right-6">
+                <button onClick={toggleTheme} className={`relative flex items-center w-16 h-8 rounded-full p-1 transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'}`}>
+                  <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center ${theme === 'dark' ? 'translate-x-8' : 'translate-x-0'}`}>
+                    {theme === 'dark' ? <Moon size={14} className="text-[#9B6EF3]" /> : <Sun size={14} className="text-[#4A90E2]" />}
+                  </div>
+                </button>
+             </div>
+
+             <div className={`w-full max-w-sm p-8 rounded-2xl shadow-xl border ${theme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-white border-slate-100'}`}>
+                <div className="flex justify-center mb-6">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#4A90E2] to-[#9B6EF3] flex items-center justify-center text-white shadow-lg">
+                    <Lock size={32} />
+                  </div>
+                </div>
+                <h2 className={`text-2xl font-bold text-center mb-8 ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>
+                  雲端記錄管理系統
+                </h2>
+                
+                <form onSubmit={handleLogin} className="space-y-6">
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}`}>
+                      請輸入系統密碼
+                    </label>
+                    <input 
+                      type="password" 
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="••••"
+                      className={`w-full px-4 py-3 rounded-xl border focus:ring-2 focus:ring-[#4A90E2] outline-none transition-colors ${theme === 'dark' ? 'bg-slate-700 border-slate-600 text-white focus:bg-slate-600' : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white'}`}
+                      required
+                    />
+                  </div>
+                  <button 
+                    type="submit" 
+                    disabled={isAuthenticating}
+                    className={`w-full py-3 rounded-xl text-white font-bold tracking-wider transition-all shadow-md flex justify-center items-center ${isAuthenticating ? 'bg-[#4A90E2]/70 cursor-not-allowed' : 'bg-[#4A90E2] hover:bg-[#357ABD] hover:shadow-lg hover:-translate-y-0.5'}`}
+                  >
+                    {isAuthenticating ? <RefreshCw className="animate-spin mr-2" size={20} /> : null}
+                    {isAuthenticating ? '驗證中...' : '進入系統'}
+                  </button>
+                </form>
+
+                {notification && (
+                  <div className={`mt-4 p-3 rounded-lg text-sm flex items-center justify-center ${notification.type === 'error' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                    {notification.type === 'error' ? <AlertCircle size={16} className="mr-2" /> : <CheckCircle2 size={16} className="mr-2" />}
+                    {notification.message}
+                  </div>
+                )}
+             </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className={`min-h-screen transition-colors duration-300 font-sans ${theme === 'dark' ? 'bg-slate-900 text-slate-100' : 'bg-[#F5F7FA] text-slate-800'}`}>
+          <header className={`sticky top-0 z-50 backdrop-blur-md border-b ${theme === 'dark' ? 'border-slate-800 bg-slate-900/80' : 'border-slate-200 bg-white/80'}`}>
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <div className="w-8 h-8 rounded-lg bg-[#4A90E2] flex items-center justify-center text-white">
+                  <Activity size={20} />
+                </div>
+                <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#4A90E2] to-[#9B6EF3]">
+                  雲端記錄管理系統
+                </h1>
+              </div>
+              <button onClick={toggleTheme} className={`relative flex items-center w-16 h-8 rounded-full p-1 transition-all duration-300 ${theme === 'dark' ? 'bg-slate-700' : 'bg-slate-200'} hover:shadow-[2px_0_8px_rgba(255,0,0,0.4),-2px_0_8px_rgba(0,100,255,0.4)]`}>
+                <div className={`bg-white w-6 h-6 rounded-full shadow-md transform transition-transform duration-300 flex items-center justify-center ${theme === 'dark' ? 'translate-x-8' : 'translate-x-0'}`}>
+                  {theme === 'dark' ? <Moon size={14} className="text-[#9B6EF3]" /> : <Sun size={14} className="text-[#4A90E2]" />}
+                </div>
+              </button>
+            </div>
+          </header>
+
+          {notification && (
+            <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in-down">
+              <div className={`flex items-center px-4 py-3 rounded-xl shadow-lg ${notification.type === 'error' ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-green-50 text-green-600 border border-green-200'}`}>
+                {notification.type === 'error' ? <AlertCircle size={20} className="mr-2" /> : <CheckCircle2 size={20} className="mr-2" />}
+                <span className="font-medium">{notification.message}</span>
+              </div>
+            </div>
+          )}
+
+          <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-8 space-y-6">
+              <section className={`rounded-[12px] p-6 shadow-md ${theme === 'dark' ? 'bg-slate-800' : 'bg-[#FFFFFF]'}`}>
+                <h2 className="text-lg font-bold mb-4 flex items-center text-[#4A90E2]">
+                  {editingId ? <Edit2 size={20} className="mr-2 text-orange-500" /> : <Plus size={20} className="mr-2" />} 
+                  {editingId ? <span className="text-orange-500">編輯紀錄</span> : '新增紀錄'}
+                </h2>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">名字 <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                        <input type="text" name="name" value={formData.name} onChange={handleInputChange} required placeholder="請輸入名字" className={`w-full pl-10 pr-4 py-2 rounded-lg border outline-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600 focus:bg-slate-600' : 'bg-slate-50 border-slate-200 focus:bg-white'}`} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">性別 <span className="text-red-500">*</span></label>
+                      <select name="gender" value={formData.gender} onChange={handleInputChange} required className={`w-full px-4 py-2 rounded-lg border outline-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600 focus:bg-slate-600' : 'bg-slate-50 border-slate-200 focus:bg-white'}`}>
+                        <option value="" disabled>請選擇性別</option>
+                        <option value="男">男</option>
+                        <option value="女">女</option>
+                        <option value="其他">其他</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  {/* ⭐ 多筆連結區塊 */}
+                  <div>
+                    <label className="block text-sm font-medium mb-1">連結 <span className="text-red-500">*</span></label>
+                    <div className="space-y-3">
+                      {formData.links.map((link, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <div className="relative flex-grow">
+                            <LinkIcon className="absolute left-3 top-2.5 text-gray-400" size={18} />
+                            <input 
+                              type="url" 
+                              value={link} 
+                              onChange={(e) => handleLinkChange(index, e.target.value)} 
+                              required={index === 0} // 第一個連結必填
+                              placeholder="https://..." 
+                              className={`w-full pl-10 pr-4 py-2 rounded-lg border outline-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600 focus:bg-slate-600' : 'bg-slate-50 border-slate-200 focus:bg-white'}`} 
+                            />
+                          </div>
+                          {/* 只有在最後一個欄位才顯示新增按鈕 */}
+                          {index === formData.links.length - 1 && (
+                            <button type="button" onClick={addLinkField} className="p-2.5 rounded-lg bg-[#4A90E2]/10 text-[#4A90E2] hover:bg-[#4A90E2]/20 transition-colors">
+                              <Plus size={18} />
+                            </button>
+                          )}
+                          {/* 只要超過一個欄位，就顯示刪除按鈕 */}
+                          {formData.links.length > 1 && (
+                            <button type="button" onClick={() => removeLinkField(index)} className="p-2.5 rounded-lg bg-red-100 text-red-500 hover:bg-red-200 dark:bg-red-900/30 dark:hover:bg-red-900/50 transition-colors">
+                              <X size={18} />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium mb-1">備註</label>
+                    <div className="relative">
+                      <FileText className="absolute left-3 top-3 text-gray-400" size={18} />
+                      <textarea name="notes" value={formData.notes} onChange={handleInputChange} rows="3" placeholder="請輸入相關備註事項..." className={`w-full pl-10 pr-4 py-2 rounded-lg border outline-none resize-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600 focus:bg-slate-600' : 'bg-slate-50 border-slate-200 focus:bg-white'}`} />
+                    </div>
+                  </div>
+                  <div className="flex justify-end pt-2 gap-3">
+                    {editingId && (
+                      <button type="button" onClick={cancelEdit} disabled={isSubmitting} className={`px-4 py-2.5 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-slate-700 text-slate-300 hover:bg-slate-600' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'}`}>
+                        取消編輯
+                      </button>
+                    )}
+                    <button type="submit" disabled={isSubmitting} className={`px-6 py-2.5 rounded-lg text-white font-medium flex items-center transition-all ${isSubmitting ? 'opacity-70 cursor-not-allowed' : 'hover:shadow-lg hover:-translate-y-0.5'} ${editingId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-[#4A90E2] hover:bg-[#357ABD]'}`}>
+                      {isSubmitting ? '處理中...' : (editingId ? '儲存修改' : '提交至雲端')}
+                    </button>
+                  </div>
+                </form>
+              </section>
+
+              <section className={`rounded-[12px] p-6 shadow-md ${theme === 'dark' ? 'bg-slate-800' : 'bg-[#FFFFFF]'}`}>
+                <div className="flex flex-col xl:flex-row xl:items-center justify-between mb-6 gap-4">
+                  <h2 className="text-lg font-bold flex items-center text-[#9B6EF3] whitespace-nowrap">
+                    <Search size={20} className="mr-2" /> 資料檢索
+                  </h2>
+                  <div className="flex flex-col sm:flex-row gap-3 w-full xl:w-auto">
+                    <div className="relative flex-grow">
+                      <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                      <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} placeholder="搜尋名字或備註..." className={`pl-9 pr-4 py-2 w-full text-sm rounded-lg border outline-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`} />
+                    </div>
+                    <select value={genderFilter} onChange={(e) => setGenderFilter(e.target.value)} className={`px-4 py-2 text-sm rounded-lg border outline-none ${theme === 'dark' ? 'bg-slate-700 border-slate-600' : 'bg-slate-50 border-slate-200'}`}>
+                      <option value="all">全部性別</option><option value="男">男</option><option value="女">女</option><option value="其他">其他</option>
+                    </select>
+                    <div className="flex gap-2">
+                      <button onClick={handleExecuteSearch} className="px-4 py-2 text-sm font-medium rounded-lg text-white bg-[#4A90E2] hover:bg-[#357ABD] transition-colors flex-grow sm:flex-grow-0 whitespace-nowrap">
+                        執行
+                      </button>
+                      <button onClick={fetchRecords} title="重新整理最新資料" className={`px-3 py-2 rounded-lg border transition-colors ${theme === 'dark' ? 'border-slate-600 text-slate-300 hover:bg-slate-700' : 'border-slate-300 text-slate-600 hover:bg-slate-100'}`}>
+                        <RefreshCw size={16} className={isLoadingRecords ? 'animate-spin' : ''} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {isLoadingRecords ? (
+                    <div className="flex justify-center items-center py-12">
+                      <svg className="animate-spin h-8 w-8 text-[#4A90E2]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                  ) : filteredRecords.length === 0 ? (
+                    <div className={`text-center py-8 rounded-lg border border-dashed ${theme === 'dark' ? 'border-slate-700 text-slate-400' : 'border-slate-300 text-slate-500'}`}>無符合條件的紀錄</div>
+                  ) : (
+                    <>
+                      {currentRecords.map(record => {
+                        const recordLinks = record.link ? record.link.split('\n').filter(l => l.trim() !== '') : [];
+                        return (
+                        <div key={record.id} className={`p-4 rounded-[12px] border transition-all relative group ${theme === 'dark' ? 'bg-slate-750 border-slate-700' : 'bg-white border-slate-100'}`}>
+                          <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-2 gap-2 sm:gap-0">
+                            <div className="flex items-center space-x-3 overflow-hidden">
+                              <span className="font-bold text-lg truncate">{record.name}</span>
+                              <span className={`px-2.5 py-1 text-xs rounded-full font-medium shrink-0 ${record.gender === '男' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' : record.gender === '女' ? 'bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300' : 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300'}`}>{record.gender}</span>
+                            </div>
+                            <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-3">
+                              <span className="text-xs text-gray-400">{formatDate(record.timestamp)}</span>
+                              <button onClick={() => handleEdit(record)} title="編輯此紀錄" className={`p-1.5 rounded-md opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity ${theme === 'dark' ? 'bg-slate-700 text-slate-300 hover:text-[#4A90E2]' : 'bg-slate-100 text-slate-500 hover:text-[#4A90E2]'}`}>
+                                <Edit2 size={14} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="text-sm mb-3 mt-1">
+                            {record.notes ? <span className={theme === 'dark' ? 'text-slate-300' : 'text-slate-600'}>{record.notes}</span> : <span className="text-gray-400 italic">無備註</span>}
+                          </div>
+                          {/* ⭐ 渲染多筆連結 */}
+                          <div className="flex flex-wrap gap-x-4 gap-y-2 mt-2">
+                            {recordLinks.map((url, i) => (
+                              <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center text-sm font-medium text-[#4A90E2] hover:text-[#357ABD] hover:underline bg-[#4A90E2]/5 px-2 py-1 rounded-md">
+                                <LinkIcon size={14} className="mr-1.5" /> 
+                                {recordLinks.length > 1 ? `連結 ${i + 1}` : '開啟相關連結'}
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )})}
+
+                      {totalPages > 1 && (
+                        <div className="flex justify-center items-center gap-4 mt-6 pt-4 border-t border-slate-200 dark:border-slate-700">
+                          <button
+                            onClick={() => { setCurrentPage(p => Math.max(1, p - 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            disabled={currentPage === 1}
+                            className={`p-2 rounded-lg border transition-colors flex items-center justify-center ${theme === 'dark' ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 disabled:hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white'}`}
+                          >
+                            <ChevronLeft size={20} />
+                          </button>
+                          <span className={`text-sm font-medium ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>
+                            第 {currentPage} 頁 / 共 {totalPages} 頁
+                          </span>
+                          <button
+                            onClick={() => { setCurrentPage(p => Math.min(totalPages, p + 1)); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                            disabled={currentPage === totalPages}
+                            className={`p-2 rounded-lg border transition-colors flex items-center justify-center ${theme === 'dark' ? 'border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 disabled:hover:bg-slate-800' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 disabled:opacity-50 disabled:hover:bg-white'}`}
+                          >
+                            <ChevronRight size={20} />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </section>
+            </div>
+
+            <div className="lg:col-span-4">
+              <section className={`rounded-[12px] p-6 shadow-md h-full ${theme === 'dark' ? 'bg-slate-800' : 'bg-[#FFFFFF]'}`}>
+                <h2 className="text-lg font-bold mb-4 flex items-center text-slate-500 border-b pb-3 border-slate-100 dark:border-slate-700 dark:text-slate-300">
+                  <History size={20} className="mr-2" /> 操作歷史紀錄
+                </h2>
+                <div className="overflow-y-auto max-h-[500px] pr-2 space-y-4 custom-scrollbar">
+                  {historyLogs.length === 0 ? <p className="text-sm text-center text-gray-400 py-4">尚無操作紀錄</p> : 
+                    historyLogs.map((log, index) => (
+                      <div key={index} className="flex items-start space-x-3 text-sm">
+                        <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${log.action === '系統登入' ? 'bg-yellow-500' : log.action === '新增紀錄' ? 'bg-green-500' : log.action === '同步資料' ? 'bg-blue-500' : log.action === '修改紀錄' ? 'bg-orange-500' : 'bg-[#9B6EF3]'}`} />
+                        <div>
+                          <div className="font-medium">{log.action}</div>
+                          <div className={`mt-0.5 ${theme === 'dark' ? 'text-slate-400' : 'text-slate-500'}`}>{log.detail}</div>
+                          <div className="text-xs text-gray-400 mt-1">{log.time}</div>
+                        </div>
+                      </div>
+                    ))
+                  }
+                </div>
+              </section>
+            </div>
+          </main>
+
+          <footer className={`mt-12 py-6 text-center text-sm border-t ${theme === 'dark' ? 'border-slate-800 text-slate-500' : 'border-slate-200 text-slate-400'}`}>
+            <p>v0.0.8 | ©2026 <a href="https://huobest.com/" target="_blank" rel="noopener noreferrer" className="hover:text-[#4A90E2] transition-colors">霍家私塾</a></p>
+          </footer>
+          
+          <style dangerouslySetInnerHTML={{__html: `
+            .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+            .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+            .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+            .dark .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; }
+            @keyframes fadeInDown { from { opacity: 0; transform: translate(-50%, -20px); } to { opacity: 1; transform: translate(-50%, 0); } }
+            .animate-fade-in-down { animation: fadeInDown 0.3s ease-out forwards; }
+          `}} />
+        </div>
+      );
+    };
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
