@@ -1,0 +1,28 @@
+{
+  "name": "cloudrecording",
+  "title": "雲端記錄管理系統",
+  "status": "in-progress",
+  "category": "工具",
+  "cycles": [
+    {
+      "start": "2026-03-31",
+      "end": "",
+      "note": ""
+    }
+  ],
+  "summary": "雲端記錄管理系統 - Deployed by EZPage",
+  "progress": "",
+  "notes": "",
+  "host": "",
+  "path": "",
+  "apps": [],
+  "links": [
+    {
+      "label": "線上版",
+      "url": "https://kmuftp-creater.github.io/cloudrecording"
+    }
+  ],
+  "tags": [],
+  "updatedAt": "2026-06-19",
+  "completedAt": null
+}
